@@ -3,7 +3,19 @@ from fastapi.responses import JSONResponse
 from routes import auth_router
 import json
 
+import asyncio
+from init_db import init_counter
+
+
 app = FastAPI()
+
+
+@app.on_event("startup")
+async def setup():
+    await init_counter()
+
+app.include_router(auth_router)
+
 
 # Pretty JSON Middleware
 @app.middleware("http")

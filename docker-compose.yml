@@ -6,9 +6,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MONGO_URL=mongodb://mongo:27017
+      - MONGO_URL=mongodb://mongodb:27017  # Fix to match service name
     depends_on:
-      - mongo
+      - mongodb
+    command: ["sh", "-c", "./wait-for-it.sh mongodb 27017 -- uvicorn main:app --host 0.0.0.0 --port 8000"]
 
   user-service:
     build:
@@ -16,10 +17,10 @@ services:
     container_name: user-service
     ports:
       - "8001:8001"
-    depends_on:
-      - auth-service
     environment:
       - SECRET_KEY=your_secret_key
+    depends_on:
+      - auth-service
 
   chat-service:
     build:
@@ -31,14 +32,19 @@ services:
       - SECRET_KEY=your_secret_key
     depends_on:
       - auth-service
+      - mongodb
 
-  mongo:
-    image: mongo
-    container_name: mongo
+  mongodb:
+    image: mongo:5.0
+    container_name: mongodb
+    restart: always
     ports:
       - "27017:27017"
     volumes:
-      - mongo-data:/data/db
+      - mongo_data:/data/db
+      - ./init-mongo:/docker-entrypoint-initdb.d
+    environment:
+      - MONGO_INITDB_DATABASE=chat_app
 
   nginx:
     image: nginx:alpine
@@ -53,4 +59,4 @@ services:
       - chat-service
 
 volumes:
-  mongo-data:
+  mongo_data:
