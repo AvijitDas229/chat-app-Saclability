@@ -13,9 +13,9 @@ from pydantic import BaseModel
 app = FastAPI()
 
 # === MongoDB connection ===
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/chatdb")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/chat_app")
 client = MongoClient(MONGO_URI)
-db = client["chatdb"]
+db = client["chat_app"]
 messages_collection = db["messages"]
 
 # === Secret Key ===
@@ -87,43 +87,57 @@ async def send_message(request: Request, body: SendMessage):
 @app.get("/chat/messages")
 @token_required
 async def get_messages(request: Request, other_user_email: str):
-    user_email = request.state.user.get("email")
-    if not user_email:
-        raise HTTPException(status_code=400, detail="Email not found in token")
+    try:
+        # Get authenticated user's email
+        user_email = request.state.user.get("email")
+        if not user_email:
+            return JSONResponse(
+                status_code=400,
+                content={"messages": [], "error": "Email not found in token"}
+            )
 
-    print(f"🔍 Logged-in user_email: {user_email}")
-    print(f"🔍 Request param: other_user_email = {other_user_email}")
+        print(f"🔍 User making request: {user_email}")
+        print(f"🔍 Looking for messages with: {other_user_email}")
 
-    print("=== All messages in DB ===")
-    for msg in messages_collection.find():
-        print(msg)
+        # Build query
+        query = {
+            "$or": [
+                {"sender_email": user_email, "receiver_email": other_user_email},
+                {"sender_email": other_user_email, "receiver_email": user_email}
+            ]
+        }
+        print(f"🔍 MongoDB query: {query}")
 
-    query = {"$or": []}
-    if other_user_email:
-        query["$or"].extend([
-            {"sender_email": user_email, "receiver_email": other_user_email},
-            {"sender_email": other_user_email, "receiver_email": user_email}
-        ])
-    else:
-        query["$or"].extend([
-            {"sender_email": user_email},
-            {"receiver_email": user_email}
-        ])
+        # Debug: Count messages
+        total_messages = messages_collection.count_documents({})
+        matching_messages = messages_collection.count_documents(query)
+        print(f"🔍 Total messages in collection: {total_messages}")
+        print(f"🔍 Matching messages found: {matching_messages}")
 
+        # Execute query
+        messages = list(messages_collection.find(query).sort("timestamp", 1))
+        
+        # Format response
+        result = []
+        for msg in messages:
+            result.append({
+                "id": str(msg["_id"]),
+                "from": msg["sender_email"],
+                "to": msg["receiver_email"],
+                "message": msg["message"],
+                "timestamp": msg["timestamp"].isoformat() if msg.get("timestamp") else None,
+                "read": msg.get("read", False)
+            })
 
-    messages = list(messages_collection.find(query).sort("timestamp", 1))
-    result = []
-    for msg in messages:
-        result.append({
-            "id": str(msg["_id"]),
-            "from": msg["sender_email"],
-            "to": msg["receiver_email"],
-            "message": msg["message"],
-            "timestamp": msg["timestamp"].isoformat() if msg.get("timestamp") else "",
-            "read": msg.get("read", False)
-        })
-    return {"messages": result}
+        print(f"🔍 Returning {len(result)} messages")
+        return {"messages": result}
 
+    except Exception as e:
+        print(f"🔥 Error fetching messages: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"messages": [], "error": "Internal server error"}
+        )
 # === POST /chat/mark_read ===
 @app.post("/chat/mark_read")
 @token_required
