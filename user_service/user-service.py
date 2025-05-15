@@ -4,6 +4,7 @@ import json
 from functools import wraps
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 app = FastAPI()
 
@@ -51,4 +52,20 @@ def token_required(f):
 @token_required
 async def user_profile(request: Request):
     user = request.state.user
-    return {"user_id": user["sub"]}
+    return {
+        "user_id": user["sub"],
+        "email": user.get("email"),
+        "username": user.get("username"),
+        "full_profile": user  # Return all available claims
+    }
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}

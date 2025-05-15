@@ -1,3 +1,7 @@
 fastapi
 uvicorn[standard]
 pyjwt
+uvicorn
+python-jose
+pymongo
+python-dotenv

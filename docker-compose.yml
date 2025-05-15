@@ -29,6 +29,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      - MONGO_URI=mongodb://mongodb:27017/chatdb
       - SECRET_KEY=your_secret_key
     depends_on:
       - auth-service
