@@ -5,3 +5,4 @@ uvicorn
 python-jose
 pymongo
 python-dotenv
+pika

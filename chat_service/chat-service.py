@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from pydantic import BaseModel
+from messaging.producer import send_message_to_queue  # ✅ RabbitMQ producer import
 
 # === FastAPI app ===
 app = FastAPI()
@@ -81,6 +82,15 @@ async def send_message(request: Request, body: SendMessage):
     result = messages_collection.insert_one(message_doc)
     if not result.inserted_id:
         raise HTTPException(status_code=500, detail="Failed to send message")
+
+    # ✅ Send message to RabbitMQ
+    send_message_to_queue({
+        "sender_email": sender_email,
+        "receiver_email": body.receiver_email,
+        "message": body.message,
+        "timestamp": message_doc["timestamp"].isoformat()
+    })
+
     return {"message": "Message sent successfully"}
 
 # === GET /chat/messages?other_user_email=... ===
@@ -88,7 +98,6 @@ async def send_message(request: Request, body: SendMessage):
 @token_required
 async def get_messages(request: Request, other_user_email: str):
     try:
-        # Get authenticated user's email
         user_email = request.state.user.get("email")
         if not user_email:
             return JSONResponse(
@@ -99,7 +108,6 @@ async def get_messages(request: Request, other_user_email: str):
         print(f"🔍 User making request: {user_email}")
         print(f"🔍 Looking for messages with: {other_user_email}")
 
-        # Build query
         query = {
             "$or": [
                 {"sender_email": user_email, "receiver_email": other_user_email},
@@ -108,16 +116,13 @@ async def get_messages(request: Request, other_user_email: str):
         }
         print(f"🔍 MongoDB query: {query}")
 
-        # Debug: Count messages
         total_messages = messages_collection.count_documents({})
         matching_messages = messages_collection.count_documents(query)
         print(f"🔍 Total messages in collection: {total_messages}")
         print(f"🔍 Matching messages found: {matching_messages}")
 
-        # Execute query
         messages = list(messages_collection.find(query).sort("timestamp", 1))
-        
-        # Format response
+
         result = []
         for msg in messages:
             result.append({
@@ -138,6 +143,7 @@ async def get_messages(request: Request, other_user_email: str):
             status_code=500,
             content={"messages": [], "error": "Internal server error"}
         )
+
 # === POST /chat/mark_read ===
 @app.post("/chat/mark_read")
 @token_required
@@ -158,4 +164,3 @@ async def mark_message_read(request: Request, body: MarkRead):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Message not found or unauthorized")
     return {"message": "Message marked as read"}
-
